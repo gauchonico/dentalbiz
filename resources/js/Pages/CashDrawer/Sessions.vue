@@ -17,7 +17,7 @@ interface Session {
   variance?: string | number | null
   started_at: string
   ended_at?: string | null
-  status: 'open' | 'closed'
+  status: 'open' | 'closed' | 'auto_closed'
   notes?: string | null
   opened_by_user?: User
   closed_by_user?: User
@@ -83,6 +83,7 @@ const formatDate = (val?: string | null) => {
                 <option :value="null">All</option>
                 <option value="open">Open</option>
                 <option value="closed">Closed</option>
+                <option value="auto_closed">Auto-closed (needs reconciliation)</option>
               </select>
             </div>
 
@@ -170,6 +171,7 @@ const formatDate = (val?: string | null) => {
                   <td class="py-2 px-3">{{ s.ended_at ? formatDate(s.ended_at) : '—' }}</td>
                   <td class="py-2 px-3">
                     <span v-if="s.status === 'open'" class="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">Open</span>
+                    <span v-else-if="s.status === 'auto_closed'" class="px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" title="Closed automatically at day end; reconcile it from the Cash Drawer page">Auto-closed</span>
                     <span v-else-if="s.status === 'closed'" class="px-2 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-800 dark:bg-slate-700 dark:text-slate-200">Closed</span>
                     <span v-else class="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-slate-300">{{ s.status }}</span>
                   </td>

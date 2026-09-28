@@ -9,6 +9,7 @@ class Prescription extends Model
     protected $fillable = [
         'treatment_id',
         'medicine_id',
+        'inventory_item_id',
         'medication',
         'dosage',
         'frequency',
@@ -38,6 +39,11 @@ class Prescription extends Model
     public function medicine()
     {
         return $this->belongsTo(DentalMedicine::class, 'medicine_id', 'medicine_id');
+    }
+
+    public function inventoryItem()
+    {
+        return $this->belongsTo(InventoryItem::class);
     }
 
     public function invoice()

@@ -101,6 +101,9 @@ const getToothForDisplay = (displayCode: string) => getTooth(toFdi(displayCode))
           <p class="text-gray-500 dark:text-gray-400">{{ props.patient.name }}</p>
         </div>
         <div class="flex items-center gap-2">
+          <Button variant="outline" @click="$inertia.visit(route('patients.images.index', props.patient.id))">
+            X-rays &amp; Images
+          </Button>
           <Button variant="outline" @click="$inertia.visit(route('patients.show', props.patient.id))">
             Back to Patient
           </Button>

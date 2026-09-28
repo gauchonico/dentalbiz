@@ -24,9 +24,18 @@ interface Session {
   id: number
   opening_amount: number | string
   closing_amount?: number | string | null
-  status: 'open' | 'closed'
+  status: 'open' | 'closed' | 'auto_closed'
   started_at: string
   ended_at?: string | null
+}
+
+interface PendingSession {
+  id: number
+  opening_amount: number | string
+  expected_cash_at_close: number | string | null
+  started_at: string
+  ended_at: string | null
+  opened_by: { id: number; name: string } | null
 }
 
 interface Props {
@@ -41,6 +50,7 @@ interface Props {
     expected_cash_at_close?: number | null
     variance?: number | null
   } | null
+  pending_reconciliation?: PendingSession[]
 }
 
 const props = defineProps<Props>()
@@ -102,6 +112,35 @@ const submitAdjustment = () => {
   adjustForm.post(route('cash-drawer.adjust'), { onSuccess: () => { adjustForm.reset(); router.reload() } })
 }
 
+// Reconcile auto-closed sessions: one small form per pending session
+const reconcileForms = ref<Record<number, { closing_amount: number | null; notes: string }>>({})
+const reconcileForm = (id: number) => (reconcileForms.value[id] ??= { closing_amount: null, notes: '' })
+const reconcilingId = ref<number | null>(null)
+const reconcileErrors = ref<Record<number, Record<string, string>>>({})
+
+const reconcileVariance = (s: PendingSession) => {
+  const f = reconcileForm(s.id)
+  if (f.closing_amount === null || f.closing_amount === ('' as any)) return null
+  return Number(f.closing_amount) - Number(s.expected_cash_at_close || 0)
+}
+
+const reconcile = (s: PendingSession) => {
+  const f = reconcileForm(s.id)
+  if (f.closing_amount === null || Number(f.closing_amount) < 0) {
+    reconcileErrors.value[s.id] = { closing_amount: 'Enter the counted cash amount.' }
+    return
+  }
+  reconcilingId.value = s.id
+  router.post(route('cash-drawer.reconcile', s.id), { closing_amount: f.closing_amount, notes: f.notes }, {
+    preserveScroll: true,
+    onSuccess: () => { delete reconcileForms.value[s.id]; delete reconcileErrors.value[s.id] },
+    onError: (errors) => { reconcileErrors.value[s.id] = errors as Record<string, string> },
+    onFinish: () => { reconcilingId.value = null },
+  })
+}
+
+const formatDateTime = (val?: string | null) => val ? new Date(val).toLocaleString() : '—'
+
 const net = computed(() => Number((props.totals && (props.totals as any).inflow) || 0) - Number((props.totals && (props.totals as any).outflow) || 0))
 </script>
 
@@ -120,6 +159,48 @@ const net = computed(() => Number((props.totals && (props.totals as any).inflow)
           <Badge v-else class="bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-slate-300">No Active Session</Badge>
         </div>
       </div>
+
+      <Card v-if="props.pending_reconciliation?.length" class="mb-8 border-amber-300 dark:border-amber-700">
+        <CardHeader>
+          <CardTitle class="text-amber-800 dark:text-amber-300">Needs reconciliation</CardTitle>
+          <CardDescription>
+            These sessions were closed automatically at the end of the business day. Count the cash and record it to finish closing them.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div class="space-y-4">
+            <div
+              v-for="s in props.pending_reconciliation"
+              :key="s.id"
+              class="grid md:grid-cols-5 gap-3 items-end border-b border-gray-200 dark:border-slate-700 pb-4 last:border-0 last:pb-0"
+            >
+              <div class="text-sm">
+                <div class="font-medium">Session #{{ s.id }}<span v-if="s.opened_by"> · {{ s.opened_by.name }}</span></div>
+                <div class="text-gray-500 dark:text-slate-400">{{ formatDateTime(s.started_at) }} → {{ formatDateTime(s.ended_at) }}</div>
+                <div class="text-gray-500 dark:text-slate-400">Expected cash: UGX {{ Number(s.expected_cash_at_close || 0).toLocaleString() }}</div>
+              </div>
+              <div>
+                <Label>Counted Cash</Label>
+                <Input v-model.number="reconcileForm(s.id).closing_amount" type="number" min="0" step="0.01" />
+                <div v-if="reconcileErrors[s.id]?.closing_amount" class="text-red-600 text-xs mt-1">{{ reconcileErrors[s.id].closing_amount }}</div>
+              </div>
+              <div class="md:col-span-2">
+                <Label>Notes</Label>
+                <Input v-model="reconcileForm(s.id).notes" placeholder="Required if counted cash differs from expected" />
+                <div v-if="reconcileErrors[s.id]?.notes" class="text-red-600 text-xs mt-1">{{ reconcileErrors[s.id].notes }}</div>
+                <div v-if="reconcileVariance(s) !== null && Math.abs(reconcileVariance(s)!) > 0.009" class="text-xs mt-1" :class="reconcileVariance(s)! < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-700 dark:text-green-400'">
+                  Variance: UGX {{ reconcileVariance(s)!.toLocaleString() }}
+                </div>
+              </div>
+              <div class="flex justify-end">
+                <Button class="bg-amber-600 hover:bg-amber-700 text-white" :disabled="reconcilingId === s.id || !canManage" @click="reconcile(s)">
+                  {{ reconcilingId === s.id ? 'Saving...' : 'Reconcile' }}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <Card>

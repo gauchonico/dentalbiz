@@ -17,7 +17,7 @@ class CashSessionsAdminController extends Controller
         $query = CashSession::query()->with(['openedBy', 'closedBy'])->orderByDesc('started_at');
 
         $status = $request->input('status');
-        if ($status && in_array($status, ['open','closed'])) {
+        if ($status && in_array($status, ['open','closed','auto_closed'])) {
             $query->where('status', $status);
         }
         $userId = $request->input('user_id');

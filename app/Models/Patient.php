@@ -48,4 +48,9 @@ class Patient extends Model
     {
         return $this->hasOne(MedicalHistory::class);
     }
+
+    public function images()
+    {
+        return $this->hasMany(PatientImage::class);
+    }
 }

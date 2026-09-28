@@ -19,6 +19,8 @@ use App\Http\Controllers\ConsentController;
 use App\Http\Controllers\ClinicalNotesController;
 use App\Http\Controllers\CashSessionsAdminController;
 use App\Http\Controllers\ClinicalNoteTemplatesAdminController;
+use App\Http\Controllers\TreatmentProcedurePriceController;
+use App\Http\Controllers\PatientImageController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -149,6 +151,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/cash-drawer/close', [CashDrawerController::class, 'close'])
         ->middleware('auth')
         ->name('cash-drawer.close');
+    Route::post('/cash-drawer/sessions/{session}/reconcile', [CashDrawerController::class, 'reconcile'])
+        ->name('cash-drawer.reconcile');
     Route::post('/cash-drawer/adjust', [CashDrawerController::class, 'adjust'])
         ->middleware('auth')
         ->name('cash-drawer.adjust');
@@ -159,6 +163,22 @@ Route::middleware('auth')->group(function () {
         ->name('admin.cash-sessions.index');
 
     // Clinical Note Templates Admin
+    Route::get('/admin/treatment-procedure-prices', [TreatmentProcedurePriceController::class, 'index'])
+        ->middleware('can:manageTreatmentPrices')
+        ->name('admin.treatment-procedure-prices.index');
+    Route::post('/admin/treatment-procedure-prices', [TreatmentProcedurePriceController::class, 'store'])
+        ->middleware('can:manageTreatmentPrices')
+        ->name('admin.treatment-procedure-prices.store');
+    Route::post('/admin/treatment-procedure-prices/{price}', [TreatmentProcedurePriceController::class, 'update'])
+        ->middleware('can:manageTreatmentPrices')
+        ->name('admin.treatment-procedure-prices.update');
+    Route::post('/admin/treatment-procedure-prices/{price}/toggle', [TreatmentProcedurePriceController::class, 'toggle'])
+        ->middleware('can:manageTreatmentPrices')
+        ->name('admin.treatment-procedure-prices.toggle');
+    Route::delete('/admin/treatment-procedure-prices/{price}', [TreatmentProcedurePriceController::class, 'destroy'])
+        ->middleware('can:manageTreatmentPrices')
+        ->name('admin.treatment-procedure-prices.destroy');
+
     Route::get('/admin/clinical-note-templates', [ClinicalNoteTemplatesAdminController::class, 'index'])
         ->middleware('can:manageClinicalTemplates')
         ->name('admin.clinical-note-templates.index');
@@ -174,6 +194,18 @@ Route::middleware('auth')->group(function () {
     Route::delete('/admin/clinical-note-templates/{template}', [ClinicalNoteTemplatesAdminController::class, 'destroy'])
         ->middleware('can:manageClinicalTemplates')
         ->name('admin.clinical-note-templates.destroy');
+
+    // Imaging (X-rays and clinical photos)
+    Route::scopeBindings()->group(function () {
+        Route::get('/patients/{patient}/imaging', [PatientImageController::class, 'index'])
+            ->name('patients.images.index');
+        Route::post('/patients/{patient}/imaging', [PatientImageController::class, 'store'])
+            ->name('patients.images.store');
+        Route::get('/patients/{patient}/imaging/{image}/file', [PatientImageController::class, 'file'])
+            ->name('patients.images.file');
+        Route::delete('/patients/{patient}/imaging/{image}', [PatientImageController::class, 'destroy'])
+            ->name('patients.images.destroy');
+    });
 
     // Medical History
     Route::get('/patients/{patient}/medical-history', [MedicalHistoryController::class, 'show'])

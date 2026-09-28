@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertCircle } from 'lucide-vue-next';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/Components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/Components/ui/select';
-import { Plus, Search, MoreVertical, Stethoscope, FileText, Calendar, Upload, Receipt } from 'lucide-vue-next';
+import { Plus, Search, MoreVertical, Stethoscope, FileText, Calendar, Upload, Receipt, Pill } from 'lucide-vue-next';
 import Pagination from '@/Components/ui/Pagination.vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
@@ -45,23 +45,25 @@ interface Treatment {
     balance?: number | string;
     payment_status?: 'pending' | 'partial' | 'paid';
   };
+  procedures?: Array<{ id?: number; name: string; cost: number }>;
   prescriptions?: Array<{
     id?: number | null;
     medicine_id: number | null;
     dosage: string;
     quantity: number;
     prescription_amount: number;
+    medication?: string | null;
     medicine?: { medicine_name: string };
   }>;
   created_at?: string;
 }
 
-interface DentalMedicine {
-  medicine_id: number;
-  medicine_name: string;
-  category: string;
-  dosage_form: string;
-  prescription_required: boolean;
+interface InventoryItem {
+  id: number;
+  name: string;
+  unit_price: number;
+  unit?: string;
+  category?: string;
 }
 
 interface PaginationMeta {
@@ -103,7 +105,7 @@ interface Props {
     this_month_treatments: number;
   };
   appointmentTypes: string[];
-  medicines: DentalMedicine[];
+  medicines: InventoryItem[];
   filters?: Filters;
   procedureTemplates?: Array<{ name: string; cost: number }>;
 }
@@ -459,7 +461,7 @@ const createForm = useForm({
   procedures: [
     { name: '', cost: 0 } as ProcedureEntry,
   ],
-  prescriptions: [] as Array<{ id?: number | null; medicine_id: number | null; dosage: string; quantity: number; prescription_amount: number }>,
+  prescriptions: [] as Array<{ id?: number | null; inventory_item_id: number | null; dosage: string; quantity: number; prescription_amount: number; medication?: string }>,
 });
 
 const editForm = useForm({
@@ -469,7 +471,7 @@ const editForm = useForm({
   notes: '',
   file: null as File | null,
   procedures: [] as ProcedureEntry[],
-  prescriptions: [] as Array<{ id?: number | null; medicine_id: number | null; dosage: string; quantity: number; prescription_amount: number }>,
+  prescriptions: [] as Array<{ id?: number | null; inventory_item_id: number | null; dosage: string; quantity: number; prescription_amount: number; medication?: string }>,
 });
 
 const isCreateOpen = ref(false);
@@ -482,6 +484,11 @@ const showErrorDialog = ref(false);
 const editingTreatment = ref<Treatment | null>(null);
 const viewingTreatment = ref<Treatment | null>(null);
 const payingTreatment = ref<Treatment | null>(null);
+
+// Invoice creation preview/confirmation
+const isInvoicePreviewOpen = ref(false);
+const invoicingTreatment = ref<Treatment | null>(null);
+const isCreatingInvoice = ref(false);
 
 watch([isCreateOpen, isEditOpen], ([createOpen, editOpen]) => {
   if (!createOpen && !editOpen) {
@@ -516,6 +523,26 @@ const openCreate = () => {
   createForm.cost = 0
 };
 
+const getInventoryItemById = (id: number | null) => {
+  if (!id) return null;
+  return (props.medicines || []).find((item) => item.id === id) || null;
+};
+
+const updatePrescriptionAmount = (prescription: { inventory_item_id: number | null; quantity: number; prescription_amount: number; medication?: string }, index: number, formType: 'create' | 'edit') => {
+  const item = getInventoryItemById(prescription.inventory_item_id);
+  const quantity = Number(prescription.quantity || 1);
+  const unitPrice = Number(item?.unit_price || 0);
+  const amount = unitPrice * quantity;
+
+  if (formType === 'create') {
+    createForm.prescriptions[index].prescription_amount = amount;
+    createForm.prescriptions[index].medication = item?.name || createForm.prescriptions[index].medication;
+  } else {
+    editForm.prescriptions[index].prescription_amount = amount;
+    editForm.prescriptions[index].medication = item?.name || editForm.prescriptions[index].medication;
+  }
+};
+
 const openEdit = (treatment: Treatment) => {
   if (treatment.invoice) {
     alert('This treatment has an invoice and cannot be edited.');
@@ -539,10 +566,11 @@ const openEdit = (treatment: Treatment) => {
   editForm.notes = treatment.notes || '';
   editForm.prescriptions = treatment.prescriptions?.map(pres => ({
     id: pres.id,
-    medicine_id: pres.medicine_id,
+    inventory_item_id: pres.medicine_id ?? (pres as any).inventory_item_id ?? null,
     dosage: pres.dosage,
     quantity: pres.quantity,
     prescription_amount: pres.prescription_amount,
+    medication: (pres as any).medication || undefined,
   })) || [];
   
   isEditOpen.value = true;
@@ -558,13 +586,52 @@ const openView = (treatment: Treatment) => {
   isViewOpen.value = true;
 };
 
-const createInvoice = (treatment: Treatment) => {
-  if (!treatment.id) return;
-  router.post(route('treatments.createInvoice', treatment.id), {}, {
-    onSuccess: () => router.reload(),
+// --- Invoice creation: preview all procedures + prescriptions for this treatment,
+// then confirm before combining them into a single invoice ---
+
+const invoicePreviewProcedures = computed(() => {
+  const treatment = invoicingTreatment.value as any;
+  if (!treatment) return [];
+  if (treatment.procedures?.length) return treatment.procedures;
+  return [{ name: treatment.procedure, cost: treatment.cost }];
+});
+
+const invoicePreviewPrescriptions = computed(() => invoicingTreatment.value?.prescriptions || []);
+
+const invoicePreviewProceduresTotal = computed(() =>
+  invoicePreviewProcedures.value.reduce((sum: number, p: any) => sum + (Number(p.cost) || 0), 0)
+);
+
+const invoicePreviewPrescriptionsTotal = computed(() =>
+  invoicePreviewPrescriptions.value.reduce((sum, p) => sum + (Number(p.prescription_amount) || 0), 0)
+);
+
+const invoicePreviewTotal = computed(() => invoicePreviewProceduresTotal.value + invoicePreviewPrescriptionsTotal.value);
+
+const openInvoicePreview = (treatment: Treatment) => {
+  if (treatment.invoice) {
+    alert('An invoice already exists for this treatment.');
+    return;
+  }
+  invoicingTreatment.value = treatment;
+  isInvoicePreviewOpen.value = true;
+};
+
+const confirmCreateInvoice = () => {
+  if (!invoicingTreatment.value?.id) return;
+  isCreatingInvoice.value = true;
+  router.post(route('treatments.createInvoice', invoicingTreatment.value.id), {}, {
+    onSuccess: () => {
+      isInvoicePreviewOpen.value = false;
+      invoicingTreatment.value = null;
+      router.reload();
+    },
     onError: (errors) => {
       alert('Failed to create invoice. Please try again.');
       console.error(errors);
+    },
+    onFinish: () => {
+      isCreatingInvoice.value = false;
     },
   });
 };
@@ -631,7 +698,6 @@ const submitPayment = async () => {
 const submitCreate = () => {
   if (!createForm.patient_id) {
     alert('Please select a patient.');
-    alert('Please fill all required fields correctly.');
     return;
   }
   if (!createForm.procedures.length || createProceduresTotal.value <= 0) {
@@ -649,9 +715,6 @@ const submitCreate = () => {
 };
 
 const submitEdit = () => {
-  // Client-side validation
-  console.log('Current patient_id:', editForm.patient_id, 'Type:', typeof editForm.patient_id);
-  
   if (!editForm.patient_id) {
     alert('Please select a patient.');
     return;
@@ -669,8 +732,6 @@ const submitEdit = () => {
   const patientId = Array.isArray(editForm.patient_id) 
     ? editForm.patient_id[0] 
     : editForm.patient_id;
-    
-  console.log('Processed patient_id:', patientId);
   
   // Add all form data
   formData.append('_method', 'PUT');
@@ -690,11 +751,14 @@ const submitEdit = () => {
   // Add prescriptions if any
   if (editForm.prescriptions?.length) {
     editForm.prescriptions.forEach((presc, index) => {
-      if (presc.medicine_id) {
-        formData.append(`prescriptions[${index}][medicine_id]`, presc.medicine_id.toString());
+      if (presc.inventory_item_id) {
+        formData.append(`prescriptions[${index}][inventory_item_id]`, presc.inventory_item_id.toString());
         formData.append(`prescriptions[${index}][dosage]`, presc.dosage || '');
         formData.append(`prescriptions[${index}][quantity]`, (presc.quantity || 0).toString());
         formData.append(`prescriptions[${index}][prescription_amount]`, (presc.prescription_amount || 0).toString());
+        if (presc.medication) {
+          formData.append(`prescriptions[${index}][medication]`, presc.medication);
+        }
         if (presc.id) {
           formData.append(`prescriptions[${index}][id]`, presc.id.toString());
         }
@@ -709,31 +773,26 @@ const submitEdit = () => {
         'Content-Type': 'multipart/form-data',
         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
       },
-    }).then(response => {
-      // On successful update
-      console.log('Treatment updated successfully:', response.data);
-      
+    }).then(() => {
       // Refresh the page to show updated data
       window.location.reload();
-      
     }).catch(error => {
       console.error('Error updating treatment:', error);
       
       // Handle validation errors
       if (error.response?.status === 422) {
         const errors = error.response.data.errors || {};
-        console.log('Validation errors:', errors);
         
         // Convert errors to a user-friendly message
-        const errorMessages = [];
+        const errorMessages: string[] = [];
         
-        for (const [field, messages] of Object.entries(errors)) {
+        for (const [, messages] of Object.entries(errors)) {
           if (Array.isArray(messages)) {
             errorMessages.push(...messages);
           } else if (typeof messages === 'string') {
             errorMessages.push(messages);
           } else if (typeof messages === 'object') {
-            errorMessages.push(...Object.values(messages).flat());
+            errorMessages.push(...Object.values(messages as Record<string, string>).flat());
           }
         }
         
@@ -766,7 +825,7 @@ const confirmDelete = () => {
 };
 
 const getTreatmentIcon = (procedure: string) => {
-  const lower = procedure.toLowerCase();
+  const lower = (procedure || '').toLowerCase();
   if (lower.includes('cleaning') || lower.includes('hygiene')) return 'fas fa-toothbrush';
   if (lower.includes('filling') || lower.includes('cavity')) return 'fas fa-fill';
   if (lower.includes('extraction') || lower.includes('removal')) return 'fas fa-tooth';
@@ -950,7 +1009,7 @@ const calculateTotalCost = (treatment: Treatment) => {
                               <i class="fas fa-pills text-green-500 dark:text-green-400 text-xs"></i>
                             </span>
                             <span class="text-gray-700 dark:text-gray-300 flex-1">
-                              {{ prescription.medicine?.medicine_name || 'Prescription' }}
+                              {{ prescription.medication || prescription.medicine?.medicine_name || 'Prescription' }}
                               <span v-if="prescription.dosage" class="text-xs text-gray-500 dark:text-gray-400">({{ prescription.dosage }})</span>
                             </span>
                             <span class="text-blue-600 dark:text-blue-400 font-medium">
@@ -1020,7 +1079,7 @@ const calculateTotalCost = (treatment: Treatment) => {
                             <DropdownMenuItem v-if="!treatment.invoice" @click="openEdit(treatment)">
                               <i class="fas fa-edit mr-2 w-4 h-4 text-center"></i>Edit
                             </DropdownMenuItem>
-                            <DropdownMenuItem v-if="!treatment.invoice" @click="createInvoice(treatment)" class="text-green-600">
+                            <DropdownMenuItem v-if="!treatment.invoice" @click="openInvoicePreview(treatment)" class="text-green-600">
                               <FileText class="w-4 h-4 mr-2" />Create Invoice
                             </DropdownMenuItem>
                             <DropdownMenuItem
@@ -1189,17 +1248,20 @@ const calculateTotalCost = (treatment: Treatment) => {
             <div class="space-y-2">
               <div class="flex items-center justify-between">
                 <Label class="text-lg font-medium">Prescriptions</Label>
-                <Button type="button" variant="outline" size="sm" @click="createForm.prescriptions.push({ id: null, medicine_id: null, dosage: '', quantity: 1, prescription_amount: 0 })">
+                <Button type="button" variant="outline" size="sm" @click="createForm.prescriptions.push({ id: null, inventory_item_id: null, dosage: '', quantity: 1, prescription_amount: 0, medication: '' })">
                   <Plus class="w-4 h-4 mr-2" />Add Prescription
                 </Button>
               </div>
               <div v-for="(prescription, index) in createForm.prescriptions" :key="index" class="grid grid-cols-12 gap-2 items-end">
                 <div class="col-span-4">
-                  <Select v-model="prescription.medicine_id">
-                    <SelectTrigger><SelectValue placeholder="Select a medicine" /></SelectTrigger>
+                  <Select
+                    :model-value="prescription.inventory_item_id"
+                    @update:modelValue="(value) => { prescription.inventory_item_id = value; updatePrescriptionAmount(prescription, index, 'create'); }"
+                  >
+                    <SelectTrigger><SelectValue placeholder="Select an inventory item" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem v-for="medicine in props.medicines" :key="medicine.medicine_id" :value="medicine.medicine_id">
-                        {{ medicine.medicine_name }}
+                      <SelectItem v-for="item in props.medicines" :key="item.id" :value="item.id">
+                        {{ item.name }} ({{ item.unit_price ? formatUGX(item.unit_price) : '0' }} / {{ item.unit || 'unit' }})
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -1208,7 +1270,13 @@ const calculateTotalCost = (treatment: Treatment) => {
                   <Input v-model="prescription.dosage" type="text" placeholder="Dosage (e.g., 500mg x2/day)" />
                 </div>
                 <div class="col-span-2">
-                  <Input v-model.number="prescription.quantity" type="number" min="1" placeholder="Qty" />
+                  <Input
+                    v-model.number="prescription.quantity"
+                    type="number"
+                    min="1"
+                    placeholder="Qty"
+                    @update:modelValue="(value) => { prescription.quantity = Number(value || 1); updatePrescriptionAmount(prescription, index, 'create'); }"
+                  />
                 </div>
                 <div class="col-span-2">
                   <Input v-model="prescription.prescription_amount" type="number" placeholder="0.00" step="0.01" min="0" />
@@ -1386,18 +1454,21 @@ const calculateTotalCost = (treatment: Treatment) => {
             <div class="space-y-2">
               <div class="flex items-center justify-between">
                 <Label class="text-lg font-medium">Prescriptions</Label>
-                <Button type="button" variant="outline" size="sm" @click="editForm.prescriptions.push({ id: null, medicine_id: null, dosage: '', quantity: 0, prescription_amount: 0 })">
+                <Button type="button" variant="outline" size="sm" @click="editForm.prescriptions.push({ id: null, inventory_item_id: null, dosage: '', quantity: 1, prescription_amount: 0, medication: '' })">
                   <Plus class="w-4 h-4 mr-2" />Add Prescription
                 </Button>
               </div>
               <div v-for="(prescription, index) in editForm.prescriptions" :key="index" class="grid grid-cols-12 gap-2 items-end">
                 <input type="hidden" v-model="prescription.id" />
                 <div class="col-span-4">
-                  <Select v-model="prescription.medicine_id">
-                    <SelectTrigger><SelectValue placeholder="Select a medicine" /></SelectTrigger>
+                  <Select
+                    :model-value="prescription.inventory_item_id"
+                    @update:modelValue="(value) => { prescription.inventory_item_id = value; updatePrescriptionAmount(prescription, index, 'edit'); }"
+                  >
+                    <SelectTrigger><SelectValue placeholder="Select an inventory item" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem v-for="medicine in props.medicines" :key="medicine.medicine_id" :value="medicine.medicine_id">
-                        {{ medicine.medicine_name }} ({{ medicine.dosage_form }})
+                      <SelectItem v-for="item in props.medicines" :key="item.id" :value="item.id">
+                        {{ item.name }} ({{ item.unit_price ? formatUGX(item.unit_price) : '0' }} / {{ item.unit || 'unit' }})
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -1406,7 +1477,13 @@ const calculateTotalCost = (treatment: Treatment) => {
                   <Input v-model="prescription.dosage" type="text" placeholder="Dosage" />
                 </div>
                 <div class="col-span-2">
-                  <Input v-model.number="prescription.quantity" type="number" min="1" placeholder="Qty" />
+                  <Input
+                    v-model.number="prescription.quantity"
+                    type="number"
+                    min="1"
+                    placeholder="Qty"
+                    @update:modelValue="(value) => { prescription.quantity = Number(value || 1); updatePrescriptionAmount(prescription, index, 'edit'); }"
+                  />
                 </div>
                 <div class="col-span-2">
                   <Input v-model="prescription.prescription_amount" type="number" placeholder="0.00" step="0.01" min="0" />
@@ -1523,7 +1600,7 @@ const calculateTotalCost = (treatment: Treatment) => {
                   </div>
                   <div v-for="prescription in viewingTreatment.prescriptions" :key="prescription.id || prescription.medicine_id" class="mt-2">
                     <div class="flex justify-between">
-                      <span class="text-gray-600 dark:text-gray-400">{{ prescription.medicine?.medicine_name || prescription.medicine_id }}</span>
+                      <span class="text-gray-600 dark:text-gray-400">{{ prescription.medication || prescription.medicine?.medicine_name || prescription.medicine_id || 'Prescription' }}</span>
                       <span class="text-sm">{{ formatUGX(prescription.prescription_amount) }}</span>
                     </div>
                   </div>
@@ -1625,6 +1702,86 @@ const calculateTotalCost = (treatment: Treatment) => {
           </div>
           <DialogFooter>
             <Button variant="outline" @click="isViewOpen = false">Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <!-- Create Invoice Preview / Confirmation Dialog -->
+      <Dialog :open="isInvoicePreviewOpen" @update:open="val => isInvoicePreviewOpen = val">
+        <DialogContent class="max-w-lg">
+          <DialogHeader>
+            <DialogTitle class="text-2xl font-bold text-gray-900 dark:text-white">Create Invoice</DialogTitle>
+            <DialogDescription>
+              This combines every procedure and prescription recorded on this treatment into a single invoice.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div v-if="invoicingTreatment" class="space-y-4">
+            <div class="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Patient</p>
+              <p class="text-base font-semibold text-gray-900 dark:text-white">{{ invoicingTreatment.patient?.name || 'N/A' }}</p>
+            </div>
+
+            <div>
+              <p class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
+                <Stethoscope class="w-4 h-4 text-blue-500" />Procedures
+              </p>
+              <div class="space-y-1 border rounded-lg divide-y divide-gray-100 dark:divide-gray-800 dark:border-gray-700">
+                <div
+                  v-for="(procedure, index) in invoicePreviewProcedures"
+                  :key="`invoice-preview-procedure-${index}`"
+                  class="flex justify-between text-sm px-3 py-2"
+                >
+                  <span class="text-gray-700 dark:text-gray-200">{{ procedure.name }}</span>
+                  <span class="font-medium text-gray-900 dark:text-white">{{ formatUGX(Number(procedure.cost || 0)) }}</span>
+                </div>
+              </div>
+              <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1 px-1">
+                <span>Procedures subtotal</span>
+                <span>{{ formatUGX(invoicePreviewProceduresTotal) }}</span>
+              </div>
+            </div>
+
+            <div v-if="invoicePreviewPrescriptions.length">
+              <p class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
+                <Pill class="w-4 h-4 text-green-500" />Prescriptions
+              </p>
+              <div class="space-y-1 border rounded-lg divide-y divide-gray-100 dark:divide-gray-800 dark:border-gray-700">
+                <div
+                  v-for="prescription in invoicePreviewPrescriptions"
+                  :key="prescription.id"
+                  class="flex justify-between text-sm px-3 py-2"
+                >
+                  <span class="text-gray-700 dark:text-gray-200">
+                    {{ prescription.medication || prescription.medicine?.medicine_name || 'Prescription' }}
+                    <span v-if="prescription.dosage" class="text-xs text-gray-500 dark:text-gray-400">({{ prescription.dosage }})</span>
+                  </span>
+                  <span class="font-medium text-gray-900 dark:text-white">{{ formatUGX(Number(prescription.prescription_amount || 0)) }}</span>
+                </div>
+              </div>
+              <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1 px-1">
+                <span>Prescriptions subtotal</span>
+                <span>{{ formatUGX(invoicePreviewPrescriptionsTotal) }}</span>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 rounded-lg px-4 py-3">
+              <span class="font-semibold text-gray-800 dark:text-gray-100">Invoice Total</span>
+              <span class="text-lg font-bold text-blue-600 dark:text-blue-400">{{ formatUGX(invoicePreviewTotal) }}</span>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" @click="isInvoicePreviewOpen = false">Cancel</Button>
+            <Button
+              :disabled="isCreatingInvoice"
+              class="bg-green-600 hover:bg-green-700 text-white"
+              @click="confirmCreateInvoice"
+            >
+              <i v-if="isCreatingInvoice" class="fas fa-spinner fa-spin mr-2"></i>
+              <FileText v-else class="w-4 h-4 mr-2" />
+              {{ isCreatingInvoice ? 'Creating...' : 'Confirm & Create Invoice' }}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

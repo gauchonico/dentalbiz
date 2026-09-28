@@ -9,6 +9,12 @@ class RegistrationTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['clinic.registration_enabled' => true]);
+    }
+
     public function test_registration_screen_can_be_rendered(): void
     {
         $response = $this->get('/register');
@@ -23,9 +29,25 @@ class RegistrationTest extends TestCase
             'email' => 'test@example.com',
             'password' => 'password',
             'password_confirmation' => 'password',
+            'terms' => true,
         ]);
 
         $this->assertAuthenticated();
         $response->assertRedirect(route('dashboard', absolute: false));
+    }
+
+    public function test_registration_is_blocked_when_disabled(): void
+    {
+        config(['clinic.registration_enabled' => false]);
+
+        $this->get('/register')->assertRedirect(route('login'));
+        $this->post('/register', [
+            'name' => 'Stranger',
+            'email' => 'stranger@example.com',
+            'password' => 'password',
+            'password_confirmation' => 'password',
+            'terms' => true,
+        ])->assertForbidden();
+        $this->assertGuest();
     }
 }

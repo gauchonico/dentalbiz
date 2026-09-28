@@ -14,9 +14,22 @@ class DashboardController extends Controller
 {
     public function index()
     {
-        $today = Carbon::today();
-        $tomorrow = Carbon::tomorrow();
-        
+        $todayStart = Carbon::today()->startOfDay();
+        $todayEnd = Carbon::today()->endOfDay();
+
+        $todayAppointments = Appointment::with(['patient'])
+            ->whereBetween('start_time', [$todayStart, $todayEnd])
+            ->orderBy('start_time')
+            ->get();
+
+        if ($todayAppointments->isEmpty()) {
+            $todayAppointments = Appointment::with(['patient'])
+                ->where('start_time', '>', now())
+                ->orderBy('start_time')
+                ->take(3)
+                ->get();
+        }
+
         return Inertia::render('Dashboard', [
             'auth' => [
                 'user' => auth()->user()?->load('roles'),
@@ -24,26 +37,25 @@ class DashboardController extends Controller
             'stats' => [
                 'total_patients' => Patient::count(),
                 'upcoming_appointments' => Appointment::where('start_time', '>', now())->count(),
-                'monthly_revenue' => Invoice::whereMonth('created_at', now()->month)->where('status', 'paid')->sum('amount'),
+                'monthly_revenue' => Invoice::whereMonth('created_at', now()->month)
+                    ->whereIn('status', ['paid', 'partial'])
+                    ->sum('amount'),
                 'low_stock_items' => InventoryItem::whereColumn('quantity', '<=', 'low_stock_threshold')->count(),
             ],
-            'todaysAppointments' => Appointment::with(['patient'])
-                ->whereBetween('start_time', [$today, $tomorrow])
-                ->orderBy('start_time')
-                ->get()
+            'todaysAppointments' => $todayAppointments
                 ->map(function ($appointment) {
                     return [
                         'id' => $appointment->id,
                         'patient_name' => $appointment->patient->name ?? 'Unknown',
                         'time' => Carbon::parse($appointment->start_time)->format('h:i A'),
-                        'status' => $appointment->status,
+                        'status' => ucfirst((string) $appointment->status),
                         'notes' => $appointment->notes,
                     ];
                 }),
             'recentActivity' => $this->getRecentActivity(),
             'pendingTasks' => [
-                'unpaid_invoices' => Invoice::where('status', 'pending')->count(),
-                'pending_appointments' => Appointment::where('status', 'pending')->count(),
+                'unpaid_invoices' => Invoice::whereIn('status', ['pending', 'overdue'])->count(),
+                'pending_appointments' => Appointment::whereIn('status', ['pending', 'scheduled'])->count(),
                 'low_stock_count' => InventoryItem::whereColumn('quantity', '<=', 'low_stock_threshold')->count(),
             ],
         ]);

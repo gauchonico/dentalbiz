@@ -5,7 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Treatment;
 use App\Models\Prescription;
 use App\Models\Patient;
-use App\Models\DentalMedicine;
+use App\Models\InventoryItem;
+use App\Models\TreatmentProcedurePrice;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
@@ -114,7 +115,7 @@ class TreatmentController extends Controller
                 'sort_order' => $sortOrder,
             ],
             'patients' => Patient::select('id', 'name', 'email')->get(),
-            'medicines' => DentalMedicine::select('medicine_id', 'medicine_name', 'category', 'dosage_form', 'prescription_required')->get(),
+            'medicines' => InventoryItem::select('id', 'name', 'unit_price', 'unit', 'category')->get(),
             'procedureTemplates' => $procedureTemplates,
             'appointmentTypes' => array_column($procedureTemplates, 'name'),
             'stats' => [
@@ -127,27 +128,20 @@ class TreatmentController extends Controller
 
     private function getProcedureTemplates(): array
     {
-        return [
-            ['name' => 'Dental Cleaning', 'cost' => 60000],
-            ['name' => 'Tooth Extraction', 'cost' => 30000],
-            ['name' => 'Root Canal', 'cost' => 350000],
-            ['name' => 'Dental Filling', 'cost' => 90000],
-            ['name' => 'Dental Crown', 'cost' => 450000],
-            ['name' => 'Dental Bridge', 'cost' => 500000],
-            ['name' => 'Dental Implant', 'cost' => 2500000],
-            ['name' => 'Teeth Whitening', 'cost' => 300000],
-            ['name' => 'Orthodontic Treatment', 'cost' => 1500000],
-            ['name' => 'Periodontal Treatment', 'cost' => 200000],
-            ['name' => 'Dental X-Ray', 'cost' => 50000],
-            ['name' => 'Oral Surgery', 'cost' => 300000],
-            ['name' => 'Emergency Dental Care', 'cost' => 150000],
-            ['name' => 'Dental Consultation', 'cost' => 40000],
-        ];
+        return TreatmentProcedurePrice::query()
+            ->where('active', true)
+            ->orderBy('name')
+            ->get(['name', 'cost'])
+            ->map(fn ($item) => [
+                'name' => $item->name,
+                'cost' => (int) $item->cost,
+            ])
+            ->all();
     }
 
     public function show(Treatment $treatment)
     {
-        $treatment->load(['patient', 'appointment', 'medicine', 'prescriptions.medicine']);
+        $treatment->load(['patient', 'appointment', 'prescriptions.inventoryItem']);
         return Inertia::render('Treatments/Show', [
             'auth' => [
                 'user' => auth()->user(),
@@ -167,7 +161,7 @@ class TreatmentController extends Controller
             'procedures.*.name' => 'required|string|max:255',
             'procedures.*.cost' => 'required|numeric|min:0',
             'prescriptions' => 'nullable|array',
-            'prescriptions.*.medicine_id' => 'nullable|exists:dental_medicines,medicine_id',
+            'prescriptions.*.inventory_item_id' => 'nullable|exists:inventory_items,id',
             'prescriptions.*.medication' => 'nullable|string',
             'prescriptions.*.dosage' => 'nullable|string',
             'prescriptions.*.frequency' => 'nullable|string',
@@ -204,6 +198,8 @@ class TreatmentController extends Controller
         // Create prescriptions
         foreach ($prescriptionData as $prescription) {
             $prescription['treatment_id'] = $treatment->id;
+            $prescription['medicine_id'] = $prescription['inventory_item_id'] ?? null;
+            $prescription['inventory_item_id'] = $prescription['inventory_item_id'] ?? null;
             $prescription['prescription_issue_date'] = $prescription['prescription_issue_date'] ?? now()->toDateString();
             $prescription['prescription_status'] = 'active';
             $prescription['refill_count'] = 0;
@@ -237,7 +233,7 @@ class TreatmentController extends Controller
             // Prescriptions
             'prescriptions' => 'nullable|array',
             'prescriptions.*.id' => 'nullable|exists:prescriptions,id',
-            'prescriptions.*.medicine_id' => 'required|exists:dental_medicines,medicine_id',
+            'prescriptions.*.inventory_item_id' => 'nullable|exists:inventory_items,id',
             'prescriptions.*.dosage' => 'nullable|string',
             'prescriptions.*.quantity' => 'required|integer|min:1',
             'prescriptions.*.frequency' => 'nullable|string',
@@ -324,6 +320,8 @@ class TreatmentController extends Controller
             
                 // Create new
                 $p['treatment_id'] = $treatment->id;
+                $p['medicine_id'] = $p['inventory_item_id'] ?? null;
+                $p['inventory_item_id'] = $p['inventory_item_id'] ?? null;
                 $p['prescription_issue_date'] = $p['prescription_issue_date'] ?? now()->toDateString();
                 $p['prescription_status'] = $p['prescription_status'] ?? 'active';
                 $p['refill_count'] = $p['refill_count'] ?? 0;

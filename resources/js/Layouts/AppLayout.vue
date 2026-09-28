@@ -46,15 +46,18 @@ const navigationItems = [
   { value: 'patients', label: 'Patients', href: '/patients', icon: 'fas fa-users' },
   { value: 'appointments', label: 'Appointments', href: '/appointments', icon: 'fas fa-calendar-check' },
   { value: 'treatments', label: 'Treatments', href: '/treatments', icon: 'fas fa-tooth' },
+  { value: 'treatment-procedures', label: 'Treatment Procedures', href: '/admin/treatment-procedure-prices', icon: 'fas fa-folder' },
   { value: 'invoices', label: 'Billing', href: '/invoices', icon: 'fas fa-file-invoice-dollar' },
   { value: 'cash-drawer', label: 'Cash Drawer', href: '/cash-drawer', icon: 'fas fa-cash-register' },
   { value: 'admin-cash-sessions', label: 'Cash Sessions', href: '/admin/cash-sessions', icon: 'fas fa-coins' },
+  { value: 'admin-treatment-procedure-prices', label: 'Treatment Prices', href: '/admin/treatment-procedure-prices', icon: 'fas fa-money-bill-wave' },
   { value: 'admin-clinical-note-templates', label: 'Clinical Note Templates', href: '/admin/clinical-note-templates', icon: 'fas fa-notes-medical' },
   { value: 'staff', label: 'Staff', href: '/staff', icon: 'fas fa-user-md' },
   { value: 'inventory', label: 'Inventory', href: '/inventory', icon: 'fas fa-boxes' },
   { value: 'expenses', label: 'Expenses', href: '/expenses', icon: 'fas fa-receipt' },
   { value: 'reports', label: 'Financial Reports', href: '/reports', icon: 'fas fa-chart-bar' },
   { value: 'consent-templates', label: 'Consent Templates', href: '/consent-templates', icon: 'fas fa-file-signature' },
+
 ];
 
 const activeTab = computed(() => {

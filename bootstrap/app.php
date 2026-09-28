@@ -50,27 +50,29 @@ if (!function_exists('extractRequiredRole')) {
     }
 }
 
-function extractResource(\Illuminate\Auth\Access\AuthorizationException $e): string
-{
-    // Try to extract resource information from the exception
-    $message = $e->getMessage();
-    if (str_contains(strtolower($message), 'patient')) {
-        return 'Patient Records';
-    } elseif (str_contains(strtolower($message), 'appointment')) {
-        return 'Appointments';
-    } elseif (str_contains(strtolower($message), 'treatment')) {
-        return 'Treatments';
-    } elseif (str_contains(strtolower($message), 'invoice')) {
-        return 'Invoices';
-    } elseif (str_contains(strtolower($message), 'staff')) {
-        return 'Staff Management';
-    } elseif (str_contains(strtolower($message), 'inventory')) {
-        return 'Inventory';
-    } elseif (str_contains(strtolower($message), 'expense')) {
-        return 'Expenses';
-    } elseif (str_contains(strtolower($message), 'report')) {
-        return 'Reports';
-    }
+if (!function_exists('extractResource')) {
+    function extractResource(\Illuminate\Auth\Access\AuthorizationException $e): string
+    {
+        // Try to extract resource information from the exception
+        $message = $e->getMessage();
+        if (str_contains(strtolower($message), 'patient')) {
+            return 'Patient Records';
+        } elseif (str_contains(strtolower($message), 'appointment')) {
+            return 'Appointments';
+        } elseif (str_contains(strtolower($message), 'treatment')) {
+            return 'Treatments';
+        } elseif (str_contains(strtolower($message), 'invoice')) {
+            return 'Invoices';
+        } elseif (str_contains(strtolower($message), 'staff')) {
+            return 'Staff Management';
+        } elseif (str_contains(strtolower($message), 'inventory')) {
+            return 'Inventory';
+        } elseif (str_contains(strtolower($message), 'expense')) {
+            return 'Expenses';
+        } elseif (str_contains(strtolower($message), 'report')) {
+            return 'Reports';
+        }
 
-    return '';
+        return '';
+    }
 }

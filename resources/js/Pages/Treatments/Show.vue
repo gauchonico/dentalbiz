@@ -3,8 +3,23 @@ import { Head } from '@inertiajs/vue3';
 import { Button } from '@/Components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/Components/ui/card';
 import { Badge } from '@/Components/ui/badge';
+import { Label } from '@/components/ui/label';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { ArrowLeft } from 'lucide-vue-next';
+import { formatUGX } from '@/Composables/useCurrency';
+import { route } from 'ziggy-js';
+
+interface Prescription {
+  id: number;
+  medicine?: { medicine_name?: string } | null;
+  medication?: string | null;
+  dosage?: string | null;
+  frequency?: string | null;
+  duration?: string | null;
+  prescription_amount?: number | null;
+  prescription_issue_date?: string | null;
+  prescription_instructions?: string | null;
+}
 
 interface Treatment {
   id: number;
@@ -14,6 +29,7 @@ interface Treatment {
   file_path?: string;
   patient: { name: string; email: string };
   appointment?: { id: number };
+  prescriptions?: Prescription[];
   created_at: string;
   updated_at: string;
 }
@@ -59,7 +75,7 @@ const props = defineProps<Props>();
             <div>
               <Label class="text-sm font-medium text-gray-500">Cost</Label>
               <p class="text-sm">
-                <Badge variant="secondary">${{ props.treatment.cost }}</Badge>
+                <Badge variant="secondary">{{ formatUGX(props.treatment.cost) }}</Badge>
               </p>
             </div>
             <div>
@@ -128,7 +144,7 @@ const props = defineProps<Props>();
               </div>
               <div>
                 <Label class="text-sm font-medium text-gray-500 dark:text-gray-400">Amount</Label>
-                <p class="text-gray-900 dark:text-white font-medium">{{ prescription.prescription_amount > 0 ? formatUGX(prescription.prescription_amount) : 'N/A' }}</p>
+                <p class="text-gray-900 dark:text-white font-medium">{{ Number(prescription.prescription_amount || 0) > 0 ? formatUGX(Number(prescription.prescription_amount || 0)) : 'N/A' }}</p>
               </div>
               <div>
                 <Label class="text-sm font-medium text-gray-500 dark:text-gray-400">Issue Date</Label>

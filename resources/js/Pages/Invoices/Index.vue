@@ -880,6 +880,15 @@ watch([editSelectedTreatmentIds, editSelectedTreatmentPrescriptionIds, editSelec
                   Export Payments
                 </a>
               </Button>
+              <Button
+                v-if="!searchQuery && statusFilter === 'all'"
+                @click.stop="openCreate"
+                class="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700"
+              >
+                <Plus class="w-4 h-4 mr-2" />
+                Invoice Client
+              </Button>
+              
 
               <!-- <Button @click="openCreate" class="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white shadow-lg hover:shadow-xl transition-all duration-300">
                 <Plus class="w-4 h-4 mr-2" />

@@ -164,7 +164,7 @@ class ConsentController extends Controller
         if ($consent->patient_id !== $patient->id) {
             abort(404);
         }
-        $signaturePath = $consent->signature_path ? public_path($consent->signature_path) : null;
+        $signaturePath = $this->signatureDataUri($consent->signature_path);
         $contentHtml = $this->renderConsentHtml($consent->content_snapshot ?? '', $patient, [
             'clinic_name' => config('app.name', 'Victoria Dental Lounge'),
             'signed_by_name' => $consent->signed_by_name,
@@ -180,6 +180,27 @@ class ConsentController extends Controller
         ])->setPaper('a4');
 
         return $pdf->download('consent-'.$patient->id.'-'.$consent->id.'.pdf');
+    }
+
+    /**
+     * Inline the stored signature as a data URI so the PDF works whether the
+     * public disk is local or a cloud bucket.
+     */
+    protected function signatureDataUri(?string $storedPath): ?string
+    {
+        if (!$storedPath) {
+            return null;
+        }
+        $path = preg_replace('#^/?storage/#', '', $storedPath);
+        try {
+            $disk = \Storage::disk('public');
+            if (!$disk->exists($path)) {
+                return null;
+            }
+            return 'data:image/png;base64,'.base64_encode($disk->get($path));
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     protected function renderConsentHtml(string $body, Patient $patient, array $variables = []): string

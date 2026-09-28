@@ -15,6 +15,15 @@ class DatabaseSeeder extends Seeder
     {
         $this->call(RoleSeeder::class);
         $this->call(PermissionSeeder::class);
+        $this->call(TreatmentProcedurePriceSeeder::class);
+
+        $this->seedClinicalNoteTemplates();
+
+        // Demo staff with the password "password" must never exist on a live server.
+        // In production, create the first admin with: php artisan app:create-admin
+        if (app()->environment('production')) {
+            return;
+        }
 
         $admin = User::factory()->create([
             'name' => 'Admin User',
@@ -48,6 +57,10 @@ class DatabaseSeeder extends Seeder
             $user->assignRole('assistant');
         });
 
+    }
+
+    protected function seedClinicalNoteTemplates(): void
+    {
         // Default Clinical Note Templates
         \App\Models\ClinicalNoteTemplate::firstOrCreate(
             ['name' => 'Routine Checkup'],

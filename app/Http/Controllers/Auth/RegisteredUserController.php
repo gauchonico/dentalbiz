@@ -19,8 +19,12 @@ class RegisteredUserController extends Controller
     /**
      * Display the registration view.
      */
-    public function create(): Response
+    public function create(): Response|RedirectResponse
     {
+        if (!config('clinic.registration_enabled')) {
+            return redirect()->route('login')->with('status', 'Accounts are created by your clinic administrator. Please sign in or contact them for access.');
+        }
+
         return Inertia::render('Auth/Register', [
             'status' => session('status'),
         ]);
@@ -33,6 +37,8 @@ class RegisteredUserController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
+        abort_unless(config('clinic.registration_enabled'), 403, 'Public registration is disabled.');
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:users,email'],

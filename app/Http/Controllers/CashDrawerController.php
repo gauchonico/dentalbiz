@@ -32,15 +32,7 @@ class CashDrawerController extends Controller
 
         $sessionSummary = null;
         if ($active) {
-            $cashIn = CashMovement::where('cash_session_id', $active->id)
-                ->where('type', 'inflow')
-                ->where('method', 'cash')
-                ->sum('amount');
-            $cashOut = CashMovement::where('cash_session_id', $active->id)
-                ->where('type', 'outflow')
-                ->where('method', 'cash')
-                ->sum('amount');
-            $expectedNow = (float) $active->opening_amount + (float) $cashIn - (float) $cashOut;
+            $expectedNow = $active->expectedCash();
             $sessionSummary = [
                 'status' => $active->status,
                 'opening_amount' => (float) $active->opening_amount,
@@ -64,12 +56,20 @@ class CashDrawerController extends Controller
             'outflow' => (float) $movements->where('type', 'outflow')->sum('amount'),
         ];
 
+        // Auto-closed sessions still waiting for a cash count (admins see everyone's)
+        $pendingReconciliation = CashSession::with('openedBy:id,name')
+            ->where('status', CashSession::STATUS_AUTO_CLOSED)
+            ->when(!$user->hasRole('admin'), fn ($q) => $q->where('opened_by', $user->id))
+            ->orderBy('started_at')
+            ->get(['id', 'opened_by', 'opening_amount', 'expected_cash_at_close', 'started_at', 'ended_at']);
+
         return Inertia::render('CashDrawer/Index', [
             'auth' => [ 'user' => $user ],
             'active_session' => $active,
             'movements' => $movements,
             'totals' => $totals,
             'session_summary' => $sessionSummary,
+            'pending_reconciliation' => $pendingReconciliation,
         ]);
     }
 
@@ -127,15 +127,7 @@ class CashDrawerController extends Controller
         $this->authorize('update', $session);
 
         // Compute expected cash at close (cash only)
-        $cashIn = CashMovement::where('cash_session_id', $session->id)
-            ->where('type', 'inflow')
-            ->where('method', 'cash')
-            ->sum('amount');
-        $cashOut = CashMovement::where('cash_session_id', $session->id)
-            ->where('type', 'outflow')
-            ->where('method', 'cash')
-            ->sum('amount');
-        $expected = (float) $session->opening_amount + (float) $cashIn - (float) $cashOut;
+        $expected = $session->expectedCash();
         $closing = (float) $data['closing_amount'];
         $variance = $closing - $expected;
 
@@ -171,6 +163,63 @@ class CashDrawerController extends Controller
         } catch (\Throwable $e) {}
 
         return redirect()->route('cash-drawer.index')->with('success', 'Cash session closed.');
+    }
+
+    /**
+     * Record the counted cash for a session that was auto-closed at day end.
+     */
+    public function reconcile(Request $request, CashSession $session)
+    {
+        $user = $request->user();
+        $this->authorize('update', $session);
+
+        if (!$session->needsReconciliation()) {
+            return back()->withErrors(['closing_amount' => 'This session does not need reconciliation.']);
+        }
+        if (!$user->hasRole('admin') && $session->opened_by !== $user->id) {
+            abort(403);
+        }
+
+        $data = $request->validate([
+            'closing_amount' => 'required|numeric|min:0',
+            'notes' => 'nullable|string',
+        ]);
+
+        $expected = (float) $session->expected_cash_at_close;
+        $closing = (float) $data['closing_amount'];
+        $variance = $closing - $expected;
+
+        if (abs($variance) > 0.009 && empty($data['notes'])) {
+            return back()->withErrors(['notes' => 'Please provide an explanation for the cash variance.']);
+        }
+
+        $note = trim('Auto-closed at day end; reconciled '.now()->format('Y-m-d H:i').'. '.($data['notes'] ?? ''));
+
+        $session->update([
+            'closed_by' => $user->id,
+            'closing_amount' => $closing,
+            'variance' => $variance,
+            'status' => CashSession::STATUS_CLOSED,
+            'notes' => trim(($session->notes ? $session->notes."\n" : '').$note),
+        ]);
+
+        try {
+            \App\Models\AuditLog::create([
+                'user_id' => $user->id,
+                'action' => 'cash_session.reconcile',
+                'subject_type' => CashSession::class,
+                'subject_id' => $session->id,
+                'metadata' => [
+                    'closing_amount' => $closing,
+                    'expected_cash_at_close' => $expected,
+                    'variance' => $variance,
+                ],
+                'ip_address' => $request->ip(),
+                'user_agent' => (string) $request->header('User-Agent'),
+            ]);
+        } catch (\Throwable $e) {}
+
+        return redirect()->route('cash-drawer.index')->with('success', 'Cash session reconciled.');
     }
 
     public function adjust(Request $request)

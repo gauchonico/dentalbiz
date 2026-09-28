@@ -8,6 +8,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (Schema::getConnection()->getDriverName() === 'sqlite') {
+            return;
+        }
+
         if (Schema::hasColumn('treatments', 'cost')) {
             DB::statement('ALTER TABLE treatments MODIFY `cost` DECIMAL(12, 2)');
         }
@@ -31,6 +35,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (Schema::getConnection()->getDriverName() === 'sqlite') {
+            return;
+        }
+
         if (Schema::hasColumn('treatments', 'cost')) {
             DB::statement('ALTER TABLE treatments MODIFY `cost` DECIMAL(8, 2)');
         }
