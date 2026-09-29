@@ -128,7 +128,7 @@ const iconMap: Record<string, string> = {
             <Link href="/" class="flex items-center space-x-3">
               <div class="flex items-center justify-center w-10 h-10 bg-blue-100 dark:bg-white/5 rounded-lg backdrop-blur-sm">
                 <img 
-                  src="/images/your-tooth-image.png" 
+                  src="/images/tooth.png" 
                   alt="Tooth Logo" 
                   class="h-6 w-6" 
                   style="filter: invert(40%) sepia(73%) saturate(2000%) hue-rotate(200deg) brightness(90%) contrast(90%);"
