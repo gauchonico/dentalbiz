@@ -22,7 +22,6 @@ class PaymentReceiptMail extends Mailable
         $receiptUrl = route('invoices.payments.receipt', [$this->invoice->id, $this->payment->id]);
 
         return $this
-            ->from('no-reply@dentalclinicapp.local', 'Dental Clinic')
             ->subject('Payment Receipt - Invoice #'.$this->invoice->id)
             ->view('emails.payment-receipt')
             ->with([

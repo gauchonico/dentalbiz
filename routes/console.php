@@ -11,8 +11,8 @@ Artisan::command('inspire', function () {
 // Mark overdue invoices daily
 Schedule::command('invoices:mark-overdue')->dailyAt('01:00');
 
-// Generate end-of-day payments report
-Schedule::command('payments:eod-report --email=admins')->dailyAt('23:55');
+// Email yesterday's payments report to admins, once the business day has closed
+Schedule::command('payments:eod-report --email=admins')->dailyAt('00:10');
 
 // Auto-close cash sessions when the business day rolls over
 Schedule::command('cash-sessions:auto-close')->dailyAt(config('clinic.cash_day_starts_at', '00:00'));

@@ -3,7 +3,7 @@ import { Head } from '@inertiajs/vue3';
 import { Button } from '@/Components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/Components/ui/card';
 import { Badge } from '@/Components/ui/badge';
-import { Label } from '@/components/ui/label';
+import { Label } from '@/Components/ui/label';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { ArrowLeft } from 'lucide-vue-next';
 import { formatUGX } from '@/Composables/useCurrency';
